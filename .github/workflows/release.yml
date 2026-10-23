@@ -40,6 +40,7 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
           mvn -B --no-transfer-progress -Pquality verify
+          bash consumer-check/verify.sh
       - name: Publish a new version through short-lived AWS credentials
         shell: bash
         run: |
@@ -123,8 +124,16 @@ jobs:
                 <username>aws</username>
                 <password>${env.CODEARTIFACT_AUTH_TOKEN}</password>
               </server>
+              <server>
+                <id>consumer-check</id>
+                <username>aws</username>
+                <password>${env.CODEARTIFACT_AUTH_TOKEN}</password>
+              </server>
             </servers>
           </settings>
           SETTINGS
           mvn -B --no-transfer-progress --settings "$temporary_directory/settings.xml" \
             -Pquality deploy -DaltDeploymentRepository="codeartifact::$endpoint"
+          CONSUMER_REPOSITORY_URL="$endpoint" \
+            CONSUMER_SETTINGS_PATH="$temporary_directory/settings.xml" \
+            bash consumer-check/verify.sh
