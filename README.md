@@ -12,6 +12,10 @@ mvn verify
 
 The build runs the existing JUnit tests and checks at least 80% line and 70% branch coverage in the assignment service package. On JDK 21, also run `mvn -Pquality verify` for formatting, Checkstyle, and SpotBugs.
 
+After `mvn verify`, run `bash consumer-check/verify.sh` to check the published artifact boundary. The check also needs Python 3 to read the artifact version from the POM. It deploys the built JAR and POM to a temporary file repository, then creates a fresh Maven consumer with an empty local cache and neutral settings. The consumer resolves the public coordinates, compiles against the dependency, and runs a known final assignment. Maven Central access is needed for Maven's build plugins on a fresh cache.
+
+To check a previously published artifact, set `CONSUMER_REPOSITORY_URL` to its Maven repository URL and `CONSUMER_SETTINGS_PATH` to a Maven settings file with read credentials for the `consumer-check` server ID. The script uses a fresh consumer cache and skips the local file deployment in this mode. Keep credentials out of command output and the repository.
+
 ## Use from Maven
 
 Configure your Maven client to access the private AWS CodeArtifact repository described in [release setup](docs/aws-release.md), then add:

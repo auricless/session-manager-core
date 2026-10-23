@@ -24,6 +24,7 @@ jobs:
           java-version: '17'
           cache: maven
       - run: mvn -B --no-transfer-progress verify
+      - run: bash consumer-check/verify.sh
 
   quality:
     name: Java 21 quality, Java 17 target

@@ -13,11 +13,12 @@ This repository builds `org.c3cavite:session-manager-core:1.0.0`. It does not cr
    | `sts:GetServiceBearerToken` | `*`, conditioned on `sts:AWSServiceName = codeartifact.amazonaws.com` |
    | `codeartifact:GetAuthorizationToken` | CodeArtifact domain ARN |
    | `codeartifact:GetRepositoryEndpoint` | CodeArtifact repository ARN |
+   | `codeartifact:ReadFromRepository` | CodeArtifact repository ARN, for fresh consumer verification |
    | `codeartifact:DescribePackageVersion` | package ARN for `maven/org.c3cavite/session-manager-core` |
    | `codeartifact:PublishPackageVersion` | same package ARN |
    | `codeartifact:PutPackageMetadata` | same package ARN |
 
-   Maven publishing requires both package write actions. `GetAuthorizationToken` also requires `sts:GetServiceBearerToken`. See [AWS publishing permissions](https://docs.aws.amazon.com/codeartifact/latest/ug/packages-overview.html) and the [CodeArtifact IAM reference](https://docs.aws.amazon.com/codeartifact/latest/ug/auth-and-access-control-permissions-reference.html). Add `codeartifact:ReadFromRepository` on the repository only if your repository policy or deployment path requires Maven to read its metadata.
+   Maven publishing requires both package write actions. `GetAuthorizationToken` also requires `sts:GetServiceBearerToken`. Repository read access lets the workflow verify the published artifact in a fresh consumer. See [AWS publishing permissions](https://docs.aws.amazon.com/codeartifact/latest/ug/packages-overview.html) and the [CodeArtifact IAM reference](https://docs.aws.amazon.com/codeartifact/latest/ug/auth-and-access-control-permissions-reference.html).
 
    The following trust policy and identity policy are starting templates. Replace every angle-bracket placeholder with the domain's account, Region, and names before applying them through your normal IAM change process.
 
@@ -61,7 +62,7 @@ This repository builds `org.c3cavite:session-manager-core:1.0.0`. It does not cr
        },
        {
          "Effect": "Allow",
-         "Action": "codeartifact:GetRepositoryEndpoint",
+         "Action": ["codeartifact:GetRepositoryEndpoint", "codeartifact:ReadFromRepository"],
          "Resource": "arn:aws:codeartifact:<region>:<account-id>:repository/<domain>/<repository>"
        },
        {
@@ -90,7 +91,9 @@ This repository builds `org.c3cavite:session-manager-core:1.0.0`. It does not cr
 
 ## Publish and verify
 
-Merge a reviewed, passing revision to `master`. In GitHub Actions, manually run **Publish core to CodeArtifact** from `master`. The workflow reads the semantic release version from the POM, checks the repository and branch, verifies the exact checkout and quality gates, refuses to publish when required variables are empty or that version already exists, and serializes its own release runs. It deploys the JAR, POM, sources JAR, and Javadoc JAR through Maven. Do not grant another publisher permission to replace this version; the preflight check cannot prevent a separate principal from racing the workflow.
+Merge a reviewed, passing revision to `master`. In GitHub Actions, manually run **Publish core to CodeArtifact** from `master`. The workflow reads the semantic release version from the POM, checks the repository and branch, verifies the exact checkout and quality gates, refuses to publish when required variables are empty or that version already exists, and serializes its own release runs. It deploys the JAR, POM, sources JAR, and Javadoc JAR through Maven, then resolves and executes the published library in a fresh Maven consumer. Do not grant another publisher permission to replace this version; the preflight check cannot prevent a separate principal from racing the workflow.
+
+If deployment succeeds but consumer verification fails, the version may already be published. Diagnose and rerun the consumer check against that repository; do not republish the same version. The [consumer instructions](../README.md#build) describe the settings and commands.
 
 An AWS administrator can verify the version and assets after the workflow succeeds:
 
