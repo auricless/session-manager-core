@@ -1,7 +1,8 @@
-# Core review constraints
+# Session Manager Core guidance
 
-Apply these only to affected assignment behavior; consult the matching clauses in [core requirements](../docs/srs-core-requirements.md) when needed.
-
-- Preserve participant counts, configured age boundaries, demographic/life-stage separation, hard cap, minimum group size, Youth priority, and unique facilitator use. The performance target is 200 attendees in under 500 ms; benchmark only when the change puts that target at risk.
-- Each final group needs one Leader. Shortages remain proposals with actionable blockers; empty input returns a final empty assignment. Facilitator exceptions must be explicit, visible, and run-scoped, and cannot waive role, participant rules, or the hard cap.
-- Keep this library independent of HTTP, Spring, persistence, and serialization configuration. Preserve reusable, immutable results and independently evaluated runs.
+- Keep this Java 17 library independent of HTTP, Spring, persistence, and serialization configuration.
+- Preserve immutable assignment results and independently evaluated runs.
+- Preserve participant counts, age boundaries, demographic and life-stage separation, the hard cap, minimum group size, Youth priority, and unique facilitator use.
+- Every final group requires a Leader. Staffing shortages remain proposals with actionable blockers. Empty input returns a final empty assignment.
+- Facilitator exceptions must be explicit, visible, and run-scoped; they cannot waive role, participant, or hard-cap rules.
+- Run `mvn verify` and, on JDK 21, `mvn -Pquality verify` for changes to Java sources or build configuration.
