@@ -5,7 +5,7 @@ This repository builds `org.c3cavite:session-manager-core:1.0.0`. It does not cr
 ## One-time administrator setup
 
 1. Create or select a CodeArtifact domain and Maven repository in one AWS Region. Configure the repository's upstream access to Maven Central if consumers will resolve other dependencies through it.
-2. Create an IAM role for GitHub's OpenID Connect (OIDC) provider `token.actions.githubusercontent.com`. Its trust policy must require audience `sts.amazonaws.com` and subject `repo:auricless/session-manager-core:ref:refs/heads/master`. Limit the role to this repository and branch. Use GitHub's [AWS OIDC guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws) when setting up the provider and trust policy.
+2. Create an IAM role for GitHub's OpenID Connect (OIDC) provider `token.actions.githubusercontent.com`. Its trust policy must require audience `sts.amazonaws.com` and subject `repo:auricless@27677714/session-manager-core@1430821547:ref:refs/heads/master`. GitHub includes immutable owner/repository IDs for these new repositories; a name-only subject will not match. Limit the role to this repository and branch. See [GitHub's immutable-subject announcement](https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/).
 3. Grant the role these minimum release actions, scoped to the domain, repository, and Maven package where AWS supports resource scoping:
 
    | Action | Resource |
@@ -34,7 +34,7 @@ This repository builds `org.c3cavite:session-manager-core:1.0.0`. It does not cr
        "Condition": {
          "StringEquals": {
            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-           "token.actions.githubusercontent.com:sub": "repo:auricless/session-manager-core:ref:refs/heads/master"
+           "token.actions.githubusercontent.com:sub": "repo:auricless@27677714/session-manager-core@1430821547:ref:refs/heads/master"
          }
        }
      }]
