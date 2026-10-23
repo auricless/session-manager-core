@@ -1,0 +1,130 @@
+name: Publish core to CodeArtifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeartifact-core-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.repository == 'auricless/session-manager-core' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+      CODEARTIFACT_DOMAIN: ${{ vars.CODEARTIFACT_DOMAIN }}
+      CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+      CODEARTIFACT_REPOSITORY: ${{ vars.CODEARTIFACT_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify exact trusted revision and build
+        env:
+          REQUESTED_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          mvn -B --no-transfer-progress -Pquality verify
+      - name: Publish a new version through short-lived AWS credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AWS_ROLE_ARN AWS_REGION CODEARTIFACT_DOMAIN CODEARTIFACT_DOMAIN_OWNER CODEARTIFACT_REPOSITORY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name repository variable is required"
+              exit 1
+            fi
+          done
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo '::error::GitHub OIDC is unavailable'
+            exit 1
+          fi
+
+          umask 077
+          temporary_directory="$(mktemp -d)"
+          trap 'rm -rf "$temporary_directory"' EXIT
+          OIDC_TOKEN_FILE="$temporary_directory/oidc-token" python3 - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          request = Request(
+              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com",
+              headers={
+                  "Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+              },
+          )
+          with urlopen(request, timeout=15) as response:
+              token = json.load(response)["value"]
+          if not token:
+              raise SystemExit("GitHub OIDC returned an empty token")
+          with open(os.environ["OIDC_TOKEN_FILE"], "w", encoding="ascii") as token_file:
+              token_file.write(token)
+          PY
+          export AWS_WEB_IDENTITY_TOKEN_FILE="$temporary_directory/oidc-token"
+          aws sts get-caller-identity --query Account --output text > /dev/null
+
+          package_version="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("pom.xml").getroot().find("{http://maven.apache.org/POM/4.0.0}version").text)')"
+          if ! [[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::The POM must declare a fixed semantic release version'
+            exit 1
+          fi
+          if result="$(aws codeartifact describe-package-version \
+              --domain "$CODEARTIFACT_DOMAIN" \
+              --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+              --repository "$CODEARTIFACT_REPOSITORY" \
+              --format maven --namespace org.c3cavite \
+              --package session-manager-core --package-version "$package_version" 2>&1)"; then
+            echo "::error::Version $package_version already exists in CodeArtifact"
+            exit 1
+          elif [[ "$result" != *ResourceNotFoundException* ]]; then
+            echo "::error::Could not verify that version $package_version is absent: $result"
+            exit 1
+          fi
+
+          endpoint="$(aws codeartifact get-repository-endpoint \
+            --domain "$CODEARTIFACT_DOMAIN" \
+            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --repository "$CODEARTIFACT_REPOSITORY" \
+            --format maven --query repositoryEndpoint --output text)"
+          if [[ "$endpoint" != https://* ]]; then
+            echo '::error::CodeArtifact did not return an HTTPS Maven endpoint'
+            exit 1
+          fi
+          export CODEARTIFACT_AUTH_TOKEN="$(aws codeartifact get-authorization-token \
+            --domain "$CODEARTIFACT_DOMAIN" \
+            --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
+            --duration-seconds 0 --query authorizationToken --output text)"
+          if [[ -z "$CODEARTIFACT_AUTH_TOKEN" || "$CODEARTIFACT_AUTH_TOKEN" == None ]]; then
+            echo '::error::CodeArtifact authorization token is empty'
+            exit 1
+          fi
+          echo "::add-mask::$CODEARTIFACT_AUTH_TOKEN"
+          cat > "$temporary_directory/settings.xml" <<'SETTINGS'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+            <servers>
+              <server>
+                <id>codeartifact</id>
+                <username>aws</username>
+                <password>${env.CODEARTIFACT_AUTH_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS
+          mvn -B --no-transfer-progress --settings "$temporary_directory/settings.xml" \
+            -Pquality deploy -DaltDeploymentRepository="codeartifact::$endpoint"
